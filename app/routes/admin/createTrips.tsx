@@ -3,10 +3,12 @@ import { Header } from "components"
 import type { Route } from "./+types/createTrips"
 import { comboBoxItems, selectItems } from "~/constants"
 import { cn, formatKey } from "~/lib/utils"
-import { animate, Coordinate, LayerDirective, LayersDirective, MapsComponent } from "@syncfusion/ej2-react-maps"
+import { LayerDirective, LayersDirective, MapsComponent } from "@syncfusion/ej2-react-maps"
 import React, { useState } from "react"
 import { world_map } from "~/constants/world_map"
 import { ButtonComponent } from "@syncfusion/ej2-react-buttons"
+import { account } from "~/appwrite/client"
+import { useNavigate } from "react-router"
 
 export const loader = async () => {
     const response = await fetch('https://restcountries.com/v3/all?fields=name,latlng,maps,flag')
@@ -14,7 +16,6 @@ export const loader = async () => {
     const data = await response.json()
 
     if(!data) return null
-    
     return  data.map((country: any) => ({
         name: country.flag + country.name.common,
         coordinate: country.latlng,
@@ -25,6 +26,7 @@ export const loader = async () => {
 
 const CreateTrips = ({loaderData} : Route.ComponentProps) => {
     const countries = loaderData as Country[]
+    const navigate = useNavigate()
 
     const [formData, setFormData] = useState<TripFormData>({
         country: countries[0]?.name || "",
@@ -42,13 +44,53 @@ const CreateTrips = ({loaderData} : Route.ComponentProps) => {
         event.preventDefault()
         setLoading(true);
 
-        if(formData.country ||
-            formData.travelStyle ||
-            formData.interest ||
-            formData.budget ||
-            formData.groupType
+        if(!formData.country ||
+            !formData.travelStyle ||
+            !formData.interest ||
+            !formData.budget ||
+            !formData.groupType
         ){
             setError('Please provide values for all fields')
+            setLoading(false)
+            return;
+        }
+
+        if(formData.duration < 1 || formData.duration > 10){
+            setError("Duration must be between 1 and 10 days")
+            setLoading(false)
+            return
+        }
+
+        const user = await account.get();
+        if(!user.$id){
+            console.error('User not authenticated')
+            setLoading(false)
+            return;
+        }
+
+        try {
+            console.log({user, formData})
+            const response = await fetch('/api/create-trip', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    country: formData.country,
+                    numberOfDays: formData.duration,
+                    travelStyle: formData.travelStyle,
+                    interests: formData.interest,
+                    budget: formData.budget,
+                    groupType: formData.groupType,
+                    userId: user.$id
+                })
+
+            })
+            const result : CreateTripResponse = await response.json()
+            if(result?.id) navigate(`/trip/${result.id}`)
+            else console.log('Failed to generate trip')
+        } catch (error) {
+            console.error('Error generating trip', error)
+        } finally {
+            setLoading(false)
         }
     }
     const handleChange = (key: keyof TripFormData, value: string| number) => {
